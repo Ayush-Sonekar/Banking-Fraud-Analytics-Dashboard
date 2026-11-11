@@ -7,7 +7,7 @@ A SQL and Power BI analysis of **50,000 synthetic banking transactions** ($12.64
 
 ## About the data
 
-The data is **synthetic**: 11 CSV files in `output/`, loaded unmodified. [Add one line: who or what generated them, e.g. "generated with a script I wrote" or "a public synthetic dataset from <source>".]
+The data is **synthetic**: 11 CSV files in `output/`, loaded unmodified. I used AI to help me this dataset.
 
 Fraud labels, risk scores, alerts, and investigation outcomes come with the source data. This project **evaluates** the supplied scores against the labels; it does not train a model. Because the data is synthetic, precision, recall, and rule hit rates reflect how the data was built, not real banking operations.
 
