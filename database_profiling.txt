@@ -1,0 +1,1155 @@
+
+1. TRANSACTION TIME COVERAGE
+
+SELECT
+    COUNT(*) AS total_rows,
+    COUNT(DISTINCT DATE("Timestamp")) AS unique_dates,
+    MIN("Timestamp") AS earliest_txn,
+    MAX("Timestamp") AS latest_txn
+FROM fact_transaction;
+
+Output:50000	183	"2026-01-01 00:02:00"	"2026-07-02 23:57:00"
+
+
+2. TRANSACTION AMOUNT DISTRIBUTION
+
+SELECT
+    MIN(Amount) AS min_amount,
+    PERCENTILE_CONT(0.50)
+        WITHIN GROUP (ORDER BY Amount) AS median_amount,
+    AVG(Amount) AS avg_amount,
+    PERCENTILE_CONT(0.95)
+        WITHIN GROUP (ORDER BY Amount) AS p95_amount,
+    MAX(Amount) AS max_amount
+FROM fact_transaction;
+Output:0.08	43.32	252.8054856000000000	636.5809999999999	97956.76
+
+
+3. CUSTOMER PROFILE
+
+SELECT
+    COUNT(*) AS customer_count,
+    COUNT(DISTINCT Segment) AS unique_segments,
+    COUNT(DISTINCT Risk_Tier) AS unique_risk_tiers,
+    COUNT(DISTINCT Region) AS unique_regions,
+
+    COUNT(*) FILTER (WHERE Segment IS NULL) AS null_segment,
+    COUNT(*) FILTER (WHERE Risk_Tier IS NULL) AS null_risk_tier,
+    COUNT(*) FILTER (WHERE Region IS NULL) AS null_region
+FROM dim_customer;
+Output:1000	2	2	5	0	0	0
+
+
+4. CUSTOMER SEGMENT DISTRIBUTION
+
+SELECT
+    Segment,
+    COUNT(*) AS customer_count
+FROM dim_customer
+GROUP BY Segment
+ORDER BY customer_count DESC;
+Output:"Retail"		811
+	"Corporate"	189
+
+
+
+5. CUSTOMER RISK-TIER DISTRIBUTION
+
+SELECT
+    Risk_Tier,
+    COUNT(*) AS customer_count
+FROM dim_customer
+GROUP BY Risk_Tier
+ORDER BY customer_count DESC;
+Output: "Low"	906
+	"High"	94
+
+
+6. INVESTIGATION RESOLUTION DISTRIBUTION
+
+SELECT
+    Resolution_Code,
+    COUNT(*) AS investigation_count
+FROM fact_investigation
+GROUP BY Resolution_Code
+ORDER BY investigation_count DESC;
+Output:"False Positive"		2475
+	"Confirmed Fraud"	450
+
+
+
+7. ALERT RULE-HIT DISTRIBUTION
+
+SELECT
+    Rule_Hit,
+    COUNT(*) AS alert_count
+FROM fact_alerts
+GROUP BY Rule_Hit
+ORDER BY alert_count DESC;
+Output:true	7820
+
+
+8. MERCHANT PROFILE
+
+SELECT
+    COUNT(*) AS merchant_count,
+    COUNT(DISTINCT Industry) AS unique_industries,
+    COUNT(DISTINCT MCC_Code) AS unique_mcc_codes,
+
+    COUNT(*) FILTER (WHERE Name IS NULL) AS null_merchant_names,
+    COUNT(*) FILTER (WHERE Industry IS NULL) AS null_industries,
+    COUNT(*) FILTER (WHERE MCC_Code IS NULL) AS null_mcc_codes
+FROM dim_merchant;
+Output:500	4	4	0	0	0
+
+
+9. FRAUD DISTRIBUTION
+
+SELECT
+    Ground_Truth_Label,
+    COUNT(*) AS transaction_count,
+    ROUND(
+        100.0 * COUNT(*) / SUM(COUNT(*)) OVER (),
+        2
+    ) AS percentage
+FROM fact_transaction
+GROUP BY Ground_Truth_Label
+ORDER BY Ground_Truth_Label;
+Output: false	49500	99.00
+	true	500	1.00
+
+
+
+10. PREDICTION DISTRIBUTION
+
+SELECT
+    Is_Predicted_Fraud,
+    COUNT(*) AS transaction_count,
+    ROUND(
+        100.0 * COUNT(*) / SUM(COUNT(*)) OVER (),
+        2
+    ) AS percentage
+FROM fact_transaction
+GROUP BY Is_Predicted_Fraud
+ORDER BY Is_Predicted_Fraud;
+Output: false	47075	94.15
+	true	2925	5.85
+
+
+11. RISK SCORE DISTRIBUTION
+
+SELECT
+    MIN(Model_Predicted_Score) AS min_score,
+    PERCENTILE_CONT(0.50)
+        WITHIN GROUP (ORDER BY Model_Predicted_Score) AS median_score,
+    AVG(Model_Predicted_Score) AS avg_score,
+    PERCENTILE_CONT(0.95)
+        WITHIN GROUP (ORDER BY Model_Predicted_Score) AS p95_score,
+    MAX(Model_Predicted_Score) AS max_score
+FROM fact_transaction;
+Output: 0.0200	0.2008	0.23071813800000000000	0.8233049999999996	0.9736
+
+
+12. FRAUD BY CUSTOMER RISK TIER
+
+SELECT
+    c.Risk_Tier,
+    COUNT(*) AS transactions,
+    SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END)
+        / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+FROM fact_transaction t
+JOIN dim_customer c
+    ON t.Customer_ID = c.Customer_ID
+GROUP BY c.Risk_Tier
+ORDER BY fraud_rate_pct DESC;
+Output: "High"	4871	54	1.11
+	"Low"	45129	446	0.99
+
+
+13. FRAUD BY CHANNEL
+
+SELECT
+    ch.Channel_Name,
+    COUNT(*) AS transactions,
+    SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END)
+        / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+FROM fact_transaction t
+JOIN dim_channel ch
+    ON t.Channel_ID = ch.Channel_ID
+GROUP BY ch.Channel_Name
+ORDER BY fraud_rate_pct DESC;
+Output: "Mobile App"		16544	174	1.05
+	"Web"			16816	170	1.01
+	"POS Terminal"	16640	156	0.94
+
+
+14. FRAUD BY MERCHANT INDUSTRY
+
+SELECT
+    m.Industry,
+    COUNT(*) AS transactions,
+    SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END)
+        / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+FROM fact_transaction t
+JOIN dim_merchant m
+    ON t.Merchant_ID = m.Merchant_ID
+WHERE t.Merchant_ID IS NOT NULL
+GROUP BY m.Industry
+ORDER BY fraud_rate_pct DESC;
+Output: "Travel"		2615	213	8.15
+	"Tech"		14976	105	0.70
+	"Dining"	9846	60	0.61
+	"Retail"	22327	120	0.54
+
+
+15. FRAUD BY MERCHANT (minimum 50 transactions)
+
+SELECT
+    m.Merchant_ID,
+    m.Name AS merchant_name,
+    m.Industry,
+    COUNT(*) AS transactions,
+    SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END)
+        / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+FROM fact_transaction t
+JOIN dim_merchant m
+    ON t.Merchant_ID = m.Merchant_ID
+WHERE t.Merchant_ID IS NOT NULL
+GROUP BY
+    m.Merchant_ID,
+    m.Name,
+    m.Industry
+HAVING COUNT(*) >= 50
+ORDER BY fraud_rate_pct DESC;
+
+Output:
+- Number of merchants meeting >=50 transaction threshold: 500
+- Highest fraud-rate merchant: "Merchant_00349"	12.50 %
+- Lowest fraud-rate merchant: "Merchant_00048"	0.00 %
+- Highest-volume merchant: "Merchant_00379"	129 transactions
+- Highest fraud-count merchant: "Merchant_00349"	13 fraud transactions
+
+-- =========================================================
+-- 16. TRANSACTION AMOUNT: FRAUD VS NON-FRAUD
+-- =========================================================
+SELECT
+    Ground_Truth_Label,
+    COUNT(*) AS transactions,
+    MIN(Amount) AS min_amount,
+    PERCENTILE_CONT(0.50)
+        WITHIN GROUP (ORDER BY Amount) AS median_amount,
+    AVG(Amount) AS avg_amount,
+    PERCENTILE_CONT(0.95)
+        WITHIN GROUP (ORDER BY Amount) AS p95_amount,
+    MAX(Amount) AS max_amount
+FROM fact_transaction
+GROUP BY Ground_Truth_Label
+ORDER BY Ground_Truth_Label;
+
+output: false	49500	0.08	42.885000000000005	236.2620688888888889	592.6804999999999	97956.76
+	true	500	0.53	402.57	1890.6037400000000000	5550.423499999999	43005.34
+
+-- =========================================================
+-- 17. RISK SCORE BY ACTUAL FRAUD STATUS
+-- =========================================================
+SELECT
+    Ground_Truth_Label,
+    COUNT(*) AS transactions,
+    MIN(Model_Predicted_Score) AS min_score,
+    PERCENTILE_CONT(0.50)
+        WITHIN GROUP (ORDER BY Model_Predicted_Score) AS median_score,
+    AVG(Model_Predicted_Score) AS avg_score,
+    PERCENTILE_CONT(0.95)
+        WITHIN GROUP (ORDER BY Model_Predicted_Score) AS p95_score,
+    MAX(Model_Predicted_Score) AS max_score
+FROM fact_transaction
+GROUP BY Ground_Truth_Label
+ORDER BY Ground_Truth_Label;
+
+Output:
+false	49500	0.0200	0.19905	0.22467275757575757576	0.4293199999982957	0.9500
+true	500	0.2156	0.8769	0.82921080000000000000	0.9482849999999999	0.9736
+
+-- =========================================================
+-- 18. RULE EFFECTIVENESS
+-- =========================================================
+SELECT
+    r.Rule_ID,
+    r.Rule_Name,
+    COUNT(a.Alert_ID) AS alert_count,
+    COUNT(DISTINCT a.Transaction_ID) AS transactions_alerted,
+    COUNT(DISTINCT i.Investigation_ID) AS investigations,
+    COUNT(DISTINCT CASE
+        WHEN i.Resolution_Code = 'Confirmed Fraud'
+        THEN i.Investigation_ID
+    END) AS confirmed_fraud,
+    COUNT(DISTINCT CASE
+        WHEN i.Resolution_Code = 'False Positive'
+        THEN i.Investigation_ID
+    END) AS false_positive
+FROM fact_alerts a
+JOIN dim_rule r
+    ON a.Rule_ID = r.Rule_ID
+LEFT JOIN fact_investigation i
+    ON a.Investigation_ID = i.Investigation_ID
+GROUP BY
+    r.Rule_ID,
+    r.Rule_Name
+ORDER BY confirmed_fraud DESC;
+
+Output:
+"R10"	"Model-Score-Threshold"		2925	2925	2925	450	2475
+"R09"	"Multiple-Risk-Signals"		661	661	577	403	174
+"R03"	"Large-Tx"			610	610	214	187	27
+"R05"	"New-Device"			200	200	181	181	0
+"R04"	"High-Risk-Merchant"		223	223	182	178	4
+"R02"	"Geo-Mismatch"			200	200	177	177	0
+"R06"	"Night-Time-Activity"		2870	2870	196	49	147
+"R08"	"Cross-Region-Activity"		81	81	39	36	3
+"R07"	"Rapid-Amount-Escalation"	30	30	28	28	0
+"R01"	"Velocity-High"			20	20	20	20	0
+
+19. Transactions by hour
+
+SELECT
+    EXTRACT(HOUR FROM Timestamp) AS transaction_hour,
+    COUNT(*) AS transactions,
+    SUM(CASE WHEN Ground_Truth_Label THEN 1 ELSE 0 END) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(CASE WHEN Ground_Truth_Label THEN 1 ELSE 0 END) / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+FROM fact_transaction
+GROUP BY transaction_hour
+ORDER BY transaction_hour;
+
+Output:
+0	877	10	1.14
+1	615	3	0.49
+2	513	33	6.43
+3	415	4	0.96
+4	450	3	0.67
+5	552	8	1.45
+6	1104	8	0.72
+7	2040	21	1.03
+8	3072	36	1.17
+9	3209	25	0.78
+10	3250	33	1.02
+11	3094	28	0.90
+12	3127	37	1.18
+13	2892	33	1.14
+14	2820	21	0.74
+15	2769	46	1.66
+16	2592	25	0.96
+17	2800	23	0.82
+18	3078	20	0.65
+19	3211	24	0.75
+20	2720	19	0.70
+21	2062	17	0.82
+22	1545	12	0.78
+23	1193	11	0.92
+
+20.Fraud by Day of Week
+
+SELECT
+    TO_CHAR(Timestamp, 'Day') AS day_of_week,
+    COUNT(*) AS transactions,
+    SUM(CASE WHEN Ground_Truth_Label THEN 1 ELSE 0 END) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(CASE WHEN Ground_Truth_Label THEN 1 ELSE 0 END) / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+FROM fact_transaction
+GROUP BY EXTRACT(ISODOW FROM Timestamp), TO_CHAR(Timestamp, 'Day')
+ORDER BY EXTRACT(ISODOW FROM Timestamp);
+
+Output:
+"Monday   "	7791	71	0.91
+"Tuesday  "	7714	76	0.99
+"Wednesday"	7616	108	1.42
+"Thursday "	8057	70	0.87
+"Friday   "	7712	80	1.04
+"Saturday "	5539	50	0.90
+"Sunday   "	5571	45	0.81
+
+21. Fraud by Month
+
+SELECT
+    DATE_TRUNC('month', Timestamp)::DATE AS transaction_month,
+    COUNT(*) AS transactions,
+    SUM(CASE WHEN Ground_Truth_Label THEN 1 ELSE 0 END) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(CASE WHEN Ground_Truth_Label THEN 1 ELSE 0 END) / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+FROM fact_transaction
+GROUP BY DATE_TRUNC('month', Timestamp)
+ORDER BY transaction_month;
+
+Output:
+"2026-01-01"	8380	89	1.06
+"2026-02-01"	7693	66	0.86
+"2026-03-01"	8353	79	0.95
+"2026-04-01"	8308	92	1.11
+"2026-05-01"	8403	92	1.09
+"2026-06-01"	8278	78	0.94
+"2026-07-01"	585	4	0.68
+
+22. Customer Transaction Activity
+
+SELECT
+    COUNT(*) AS customer_count,
+    MIN(transaction_count) AS min_transactions,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY transaction_count) AS median_transactions,
+    AVG(transaction_count) AS avg_transactions,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY transaction_count) AS p95_transactions,
+    MAX(transaction_count) AS max_transactions
+FROM (
+    SELECT
+        Customer_ID,
+        COUNT(*) AS transaction_count
+    FROM fact_transaction
+    GROUP BY Customer_ID
+) x;
+
+Output:
+1000	25	42	50.0000000000000000	124	155
+
+23. Customer Transaction Amount behaviour
+
+SELECT
+    COUNT(*) AS customer_count,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY avg_amount) AS median_avg_amount,
+    AVG(avg_amount) AS overall_avg_customer_amount,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY avg_amount) AS p95_avg_amount,
+    MAX(avg_amount) AS max_avg_amount
+FROM (
+    SELECT
+        Customer_ID,
+        AVG(Amount) AS avg_amount
+    FROM fact_transaction
+    GROUP BY Customer_ID
+) x;
+
+Output:
+1000	146.5960969387755	252.5181448956462748	853.3396152073718	4146.0980952380952381
+
+24. Fraud by Customer Segment
+
+SELECT
+    c.Segment,
+    COUNT(*) AS transactions,
+    SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END) / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+FROM fact_transaction t
+JOIN dim_customer c
+    ON t.Customer_ID = c.Customer_ID
+GROUP BY c.Segment
+ORDER BY fraud_rate_pct DESC;
+
+Output:
+"Corporate"	9012	97	1.08
+"Retail"	40988	403	0.98
+
+25. Device Usage Distribution
+
+select
+	count(*) as device_count,
+	min(transaction_count) as min_transactions,
+	percentile_cont(0.50) WITHIN GROUP (order by transaction_count) as median_transactions,
+	avg(transaction_count) as avg_transactions,
+	percentile_cont(0.95) WITHIN group (order by transaction_count) as p95_transaction,
+	max(transaction_count) as max_transations
+from (SELECT
+			device_id,
+			count(*) as transaction_count
+			from fact_transaction
+			where device_id is not null
+			group by device_id
+);
+
+Output:
+200	17	242.5	248.7900000000000000	403.19999999999993	542
+
+26. Customer per device
+
+SELECT
+    COUNT(*) AS device_count,
+    MIN(customer_count) AS min_customers,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY customer_count) AS median_customers,
+    AVG(customer_count) AS avg_customers,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY customer_count) AS p95_customers,
+    MAX(customer_count) AS max_customers
+FROM (
+    SELECT
+        Device_ID,
+        COUNT(DISTINCT Customer_ID) AS customer_count
+    FROM fact_transaction
+    WHERE Device_ID IS NOT NULL
+    GROUP BY Device_ID
+) x;
+
+Output:
+200	1	11	11.1550000000000000	18	22
+
+27. Fraud by Device fingerprint confidence
+
+SELECT
+    CASE
+        WHEN d.Fingerprint_Confidence < 0.80 THEN 'Low'
+        WHEN d.Fingerprint_Confidence < 0.90 THEN 'Medium'
+        ELSE 'High'
+    END AS confidence_band,
+    COUNT(*) AS transactions,
+    SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(CASE WHEN t.Ground_Truth_Label THEN 1 ELSE 0 END) / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+FROM fact_transaction t
+JOIN dim_device d
+    ON t.Device_ID = d.Device_ID
+WHERE t.Device_ID IS NOT NULL
+GROUP BY confidence_band
+ORDER BY confidence_band;
+
+Output:
+"High"	13887	139	1.00
+"Low"	15312	144	0.94
+"Medium"	20559	213	1.04
+
+28. Customer transaction velocity
+
+SELECT
+    Customer_ID,
+    COUNT(*) AS transaction_count,
+    MIN(Timestamp) AS first_transaction,
+    MAX(Timestamp) AS last_transaction,
+    COUNT(*) / NULLIF(
+        EXTRACT(EPOCH FROM (MAX(Timestamp) - MIN(Timestamp))) / 86400,
+        0
+    ) AS transactions_per_day
+FROM fact_transaction
+GROUP BY Customer_ID
+ORDER BY transactions_per_day DESC
+LIMIT 20;
+
+Output:
+"customer_id"	"transaction_count"	"first_transaction"	"last_transaction"	"transactions_per_day"
+"CUST00690"	155	"2026-01-02 06:02:00"	"2026-07-01 15:16:00"	0.85927454437660247783
+"CUST00040"	143	"2026-01-06 17:35:00"	"2026-07-01 20:46:00"	0.81188813670253241909
+"CUST00710"	146	"2026-01-02 14:21:00"	"2026-07-02 21:17:00"	0.80534444716842363319
+"CUST00770"	142	"2026-01-01 07:27:00"	"2026-06-29 20:44:00"	0.79085076018054046120
+"CUST00470"	142	"2026-01-02 10:37:00"	"2026-07-01 10:04:00"	0.78898933892046441112
+"CUST00450"	140	"2026-01-04 07:27:00"	"2026-07-02 04:12:00"	0.78271504280472890353
+"CUST00920"	140	"2026-01-03 19:26:00"	"2026-07-02 13:44:00"	0.77880536819414505250
+"CUST00890"	141	"2026-01-01 11:54:00"	"2026-07-02 20:10:00"	0.77326183657303028475
+"CUST00510"	139	"2026-01-03 16:46:00"	"2026-07-02 17:19:00"	0.77212391940840865153
+"CUST00360"	139	"2026-01-01 06:38:00"	"2026-06-30 17:40:00"	0.77025498149017555481
+"CUST00610"	139	"2026-01-01 07:13:00"	"2026-07-01 19:39:00"	0.76576404245062857212
+"CUST00800"	137	"2026-01-01 15:51:00"	"2026-07-01 10:49:00"	0.75778411142437907634
+"CUST00490"	137	"2026-01-01 18:07:00"	"2026-07-01 23:52:00"	0.75590551181102362219
+"CUST00000"	136	"2026-01-01 19:23:00"	"2026-07-01 01:14:00"	0.75453379104684628455
+"CUST00650"	136	"2026-01-01 23:19:00"	"2026-07-01 13:11:00"	0.75313807531380753129
+"CUST00370"	137	"2026-01-01 10:42:00"	"2026-07-02 20:20:00"	0.75109077203054923127
+"CUST00560"	136	"2026-01-01 04:04:00"	"2026-07-02 02:18:00"	0.74755510088787436917
+"CUST00670"	134	"2026-01-01 19:23:00"	"2026-06-30 15:09:00"	0.74517466962223784114
+"CUST00020"	135	"2026-01-01 15:06:00"	"2026-07-02 05:28:00"	0.74339775604010676787
+"CUST00830"	135	"2026-01-01 20:30:00"	"2026-07-02 12:06:00"	0.74318744838976052849
+
+29. Rapid transactions within 1 hour
+
+SELECT
+    Customer_ID,
+    COUNT(*) AS transaction_count
+FROM fact_transaction
+GROUP BY Customer_ID, DATE_TRUNC('hour', "Timestamp")
+HAVING COUNT(*) >= 3
+ORDER BY transaction_count DESC;
+
+Output:
+"CUST00365"	6
+"CUST00568"	6
+"CUST00383"	6
+"CUST00022"	6
+"CUST00906"	6
+"CUST00682"	6
+"CUST00717"	6
+"CUST00105"	6
+"CUST00672"	6
+"CUST00571"	6
+"CUST00207"	6
+"CUST00328"	6
+"CUST00829"	6
+"CUST00435"	6
+"CUST00289"	5
+"CUST00592"	5
+"CUST00753"	5
+"CUST00946"	4
+"CUST00440"	4
+"CUST00521"	4
+"CUST00610"	3
+"CUST00380"	3
+"CUST00800"	3
+"CUST00189"	3
+"CUST00950"	3
+"CUST00280"	3
+
+30. Fraud by transaction velocity bucket
+
+WITH customer_activity AS (
+    SELECT
+        Customer_ID,
+        COUNT(*) AS transaction_count
+    FROM fact_transaction
+    GROUP BY Customer_ID
+)
+SELECT
+    CASE
+        WHEN transaction_count < 40 THEN 'Low'
+        WHEN transaction_count < 80 THEN 'Medium'
+        WHEN transaction_count < 120 THEN 'High'
+        ELSE 'Very High'
+    END AS activity_band,
+    COUNT(*) AS customers
+FROM customer_activity
+GROUP BY 1
+ORDER BY 1;
+
+Output:
+"activity_band"	     "customers"
+"High"			30
+"Low"			345
+"Medium"		555
+"Very High"		70
+
+31. True Transaction Velocity
+
+SELECT
+    t1.Customer_ID,
+    t1.Transaction_ID,
+    COUNT(t2.Transaction_ID) AS transactions_within_60min
+FROM fact_transaction t1
+JOIN fact_transaction t2
+    ON t1.Customer_ID = t2.Customer_ID
+   AND t2.Timestamp BETWEEN t1.Timestamp
+                           AND t1.Timestamp + INTERVAL '60 minutes'
+GROUP BY
+    t1.Customer_ID,
+    t1.Transaction_ID
+HAVING COUNT(t2.Transaction_ID) >= 3
+ORDER BY transactions_within_60min DESC;
+
+Output:
+"CUST00435"	"TX0046948"	6
+"CUST00365"	"TX0027192"	6
+"CUST00829"	"TX0018824"	6
+"CUST00571"	"TX0008259"	6
+"CUST00672"	"TX0004948"	6
+"CUST00682"	"TX0044895"	6
+"CUST00022"	"TX0024632"	6
+"CUST00289"	"TX0042435"	6
+"CUST00440"	"TX0015722"	6
+"CUST00946"	"TX0013087"	6
+"CUST00717"	"TX0029361"	6
+"CUST00568"	"TX0010861"	6
+"CUST00592"	"TX0034240"	6
+"CUST00753"	"TX0002791"	6
+"CUST00521"	"TX0021554"	6
+"CUST00328"	"TX0037689"	6
+"CUST00383"	"TX0039980"	6
+"CUST00105"	"TX0006777"	6
+"CUST00207"	"TX0000165"	6
+"CUST00906"	"TX0031905"	6
+"CUST00592"	"TX0034787"	5
+"CUST00829"	"TX0019597"	5
+"CUST00207"	"TX0000712"	5
+"CUST00753"	"TX0003283"	5
+"CUST00717"	"TX0030036"	5
+"CUST00289"	"TX0042946"	5
+"CUST00682"	"TX0045426"	5
+"CUST00105"	"TX0007104"	5
+"CUST00383"	"TX0040356"	5
+"CUST00571"	"TX0008515"	5
+"CUST00521"	"TX0022127"	5
+"CUST00672"	"TX0005393"	5
+"CUST00568"	"TX0011654"	5
+"CUST00365"	"TX0027936"	5
+"CUST00328"	"TX0037789"	5
+"CUST00906"	"TX0032644"	5
+"CUST00022"	"TX0025151"	5
+"CUST00946"	"TX0013473"	5
+"CUST00440"	"TX0016477"	5
+"CUST00435"	"TX0047378"	5
+"CUST00105"	"TX0006945"	5
+"CUST00328"	"TX0038425"	4
+"CUST00717"	"TX0030281"	4
+"CUST00521"	"TX0022646"	4
+"CUST00289"	"TX0043523"	4
+"CUST00105"	"TX0007425"	4
+"CUST00207"	"TX0001117"	4
+"CUST00672"	"TX0005711"	4
+"CUST00829"	"TX0020153"	4
+"CUST00568"	"TX0011937"	4
+"CUST00435"	"TX0047747"	4
+"CUST00682"	"TX0045772"	4
+"CUST00571"	"TX0009182"	4
+"CUST00365"	"TX0028442"	4
+"CUST00022"	"TX0025503"	4
+"CUST00753"	"TX0003868"	4
+"CUST00592"	"TX0035450"	4
+"CUST00946"	"TX0013994"	4
+"CUST00440"	"TX0016980"	4
+"CUST00906"	"TX0032860"	4
+"CUST00383"	"TX0040971"	4
+"CUST00800"	"TX0017422"	3
+"CUST00105"	"TX0008050"	3
+"CUST00440"	"TX0017372"	3
+"CUST00207"	"TX0001626"	3
+"CUST00720"	"TX0040516"	3
+"CUST00150"	"TX0049205"	3
+"CUST00682"	"TX0045851"	3
+"CUST00571"	"TX0009851"	3
+"CUST00717"	"TX0031002"	3
+"CUST00365"	"TX0029037"	3
+"CUST00829"	"TX0020521"	3
+"CUST00672"	"TX0006091"	3
+"CUST00383"	"TX0041596"	3
+"CUST00289"	"TX0043886"	3
+"CUST00435"	"TX0048343"	3
+"CUST00970"	"TX0014065"	3
+"CUST00328"	"TX0038891"	3
+"CUST00906"	"TX0033205"	3
+"CUST00365"	"TX0028756"	3
+"CUST00022"	"TX0025854"	3
+"CUST00521"	"TX0023508"	3
+"CUST00850"	"TX0049082"	3
+"CUST00610"	"TX0040221"	3
+"CUST00280"	"TX0028613"	3
+"CUST00753"	"TX0004012"	3
+"CUST00040"	"TX0039179"	3
+"CUST00946"	"TX0014392"	3
+"CUST00950"	"TX0007284"	3
+"CUST00404"	"TX0025805"	3
+"CUST00380"	"TX0036801"	3
+"CUST00592"	"TX0035947"	3
+"CUST00189"	"TX0022087"	3
+"CUST00560"	"TX0012012"	3
+"CUST00568"	"TX0012204"	3
+"CUST00680"	"TX0039453"	3
+
+32. Fraud by maximum 60-minutes velocity
+
+Transactions
+     ⬇️
+Calculate each transaction's 60-min window
+     ⬇️
+Find MAX velocity for each customer
+     ⬇️
+Assign customer to velocity band
+     ⬇️
+Measure fraud among that customer's transactions
+
+Query:
+WITH velocity AS (
+    SELECT
+        t1.Customer_ID,
+        t1.Transaction_ID,
+        t1.Ground_Truth_Label,
+        COUNT(t2.Transaction_ID) AS transactions_within_60min
+    FROM fact_transaction t1
+    JOIN fact_transaction t2
+        ON t1.Customer_ID = t2.Customer_ID
+       AND t2.Timestamp BETWEEN t1.Timestamp
+                            AND t1.Timestamp + INTERVAL '60 minutes'
+    GROUP BY
+        t1.Customer_ID,
+        t1.Transaction_ID,
+        t1.Ground_Truth_Label
+),
+
+customer_velocity AS (
+    SELECT
+        Customer_ID,
+        MAX(transactions_within_60min) AS max_transactions_60min,
+        COUNT(*) AS total_transactions,
+        SUM(
+            CASE
+                WHEN Ground_Truth_Label THEN 1
+                ELSE 0
+            END
+        ) AS fraud_transactions
+    FROM velocity
+    GROUP BY Customer_ID
+),
+
+banded AS (
+    SELECT
+        CASE
+            WHEN max_transactions_60min = 1 THEN '1'
+            WHEN max_transactions_60min = 2 THEN '2'
+            WHEN max_transactions_60min = 3 THEN '3'
+            WHEN max_transactions_60min = 4 THEN '4'
+            WHEN max_transactions_60min = 5 THEN '5'
+            ELSE '6+'
+        END AS velocity_band,
+        total_transactions,
+        fraud_transactions
+    FROM customer_velocity
+)
+
+SELECT
+    velocity_band,
+    COUNT(*) AS customers,
+    SUM(total_transactions) AS transactions,
+    SUM(fraud_transactions) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(fraud_transactions)
+        / NULLIF(SUM(total_transactions), 0),
+        2
+    ) AS fraud_rate_pct
+FROM banded
+GROUP BY velocity_band
+ORDER BY
+    CASE velocity_band
+        WHEN '1' THEN 1
+        WHEN '2' THEN 2
+        WHEN '3' THEN 3
+        WHEN '4' THEN 4
+        WHEN '5' THEN 5
+        WHEN '6+' THEN 6
+    END;
+
+Output:
+"velocity_band"	"customers"	"transactions"	"fraud_transactions"	"fraud_rate_pct"
+"1"		   538		   21946	  168				0.77
+"2"		   428	          25358		  208				0.82
+"3"		   14		  1625		  15				0.92
+"6+"		   20		 1071		 109				10.18
+
+33. Examine those 6+ velocity band customers
+
+WITH velocity AS (
+    SELECT
+        t1.Customer_ID,
+        t1.Transaction_ID,
+        COUNT(t2.Transaction_ID) AS transactions_within_60min
+    FROM fact_transaction t1
+    JOIN fact_transaction t2
+        ON t1.Customer_ID = t2.Customer_ID
+       AND t2.Timestamp BETWEEN t1.Timestamp
+                            AND t1.Timestamp + INTERVAL '60 minutes'
+    GROUP BY
+        t1.Customer_ID,
+        t1.Transaction_ID
+),
+
+customer_velocity AS (
+    SELECT
+        Customer_ID,
+        MAX(transactions_within_60min) AS max_transactions_60min
+    FROM velocity
+    GROUP BY Customer_ID
+)
+
+SELECT
+    cv.Customer_ID,
+    cv.max_transactions_60min,
+    COUNT(t.Transaction_ID) AS total_transactions,
+    SUM(
+        CASE
+            WHEN t.Ground_Truth_Label THEN 1
+            ELSE 0
+        END
+    ) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(
+            CASE
+                WHEN t.Ground_Truth_Label THEN 1
+                ELSE 0
+            END
+        ) / COUNT(t.Transaction_ID),
+        2
+    ) AS fraud_rate_pct,
+    ROUND(AVG(t.Amount), 2) AS avg_transaction_amount,
+    c.Risk_Tier,
+    c.Segment,
+    c.Region
+FROM customer_velocity cv
+JOIN fact_transaction t
+    ON cv.Customer_ID = t.Customer_ID
+JOIN dim_customer c
+    ON cv.Customer_ID = c.Customer_ID
+WHERE cv.max_transactions_60min >= 6
+GROUP BY
+    cv.Customer_ID,
+    cv.max_transactions_60min,
+    c.Risk_Tier,
+    c.Segment,
+    c.Region
+ORDER BY
+    cv.max_transactions_60min DESC,
+    fraud_rate_pct DESC;
+
+Output:
+"customer_id"	"max_transactions_60min"	"total_transactions"	"fraud_transactions"	"fraud_rate_pct"	"avg_transaction_amount"	"risk_tier"	"segment"	"region"
+"CUST00946"	6	44	7	15.91	3496.86	"Low"	"Retail"	"South"
+"CUST00829"	6	35	5	14.29	100.72	"Low"	"Retail"	"Central"
+"CUST00753"	6	43	6	13.95	197.00	"Low"	"Corporate"	"West"
+"CUST00365"	6	50	6	12.00	305.89	"Low"	"Retail"	"North"
+"CUST00328"	6	61	7	11.48	1560.81	"Low"	"Corporate"	"West"
+"CUST00906"	6	44	5	11.36	247.33	"Low"	"Retail"	"South"
+"CUST00289"	6	53	6	11.32	1252.41	"Low"	"Retail"	"Central"
+"CUST00672"	6	45	5	11.11	556.58	"Low"	"Retail"	"East"
+"CUST00717"	6	47	5	10.64	122.86	"Low"	"Retail"	"East"
+"CUST00521"	6	58	6	10.34	152.35	"Low"	"Retail"	"South"
+"CUST00571"	6	49	5	10.20	175.21	"Low"	"Retail"	"South"
+"CUST00022"	6	50	5	10.00	131.90	"Low"	"Corporate"	"East"
+"CUST00105"	6	51	5	9.80	1362.35	"Low"	"Retail"	"North"
+"CUST00682"	6	51	5	9.80	136.93	"Low"	"Retail"	"East"
+"CUST00383"	6	52	5	9.62	254.55	"Low"	"Retail"	"West"
+"CUST00207"	6	52	5	9.62	127.69	"High"	"Corporate"	"East"
+"CUST00592"	6	53	5	9.43	126.98	"High"	"Corporate"	"East"
+"CUST00568"	6	54	5	9.26	330.08	"Low"	"Retail"	"West"
+"CUST00435"	6	58	5	8.62	124.44	"Low"	"Retail"	"North"
+"CUST00440"	6	121	6	4.96	134.88	"Low"	"Retail"	"North"
+
+34. Exact Burst Duration of transaction
+
+WITH velocity AS (
+    SELECT
+        t1.Customer_ID,
+        t1.Transaction_ID,
+        t1.Timestamp AS window_start,
+        COUNT(t2.Transaction_ID) AS transactions_within_60min,
+        MIN(t2.Timestamp) AS first_in_window,
+        MAX(t2.Timestamp) AS last_in_window
+    FROM fact_transaction t1
+    JOIN fact_transaction t2
+        ON t1.Customer_ID = t2.Customer_ID
+       AND t2.Timestamp BETWEEN t1.Timestamp
+                            AND t1.Timestamp + INTERVAL '60 minutes'
+    GROUP BY
+        t1.Customer_ID,
+        t1.Transaction_ID,
+        t1.Timestamp
+),
+
+max_velocity AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY Customer_ID
+            ORDER BY transactions_within_60min DESC,
+                     (last_in_window - first_in_window)
+        ) AS rn
+    FROM velocity
+)
+
+SELECT
+    Customer_ID,
+    transactions_within_60min,
+    first_in_window,
+    last_in_window,
+    EXTRACT(
+        EPOCH FROM (last_in_window - first_in_window)
+    ) / 60 AS burst_duration_minutes
+FROM max_velocity
+WHERE rn = 1
+  AND transactions_within_60min >= 6
+ORDER BY burst_duration_minutes;
+
+Output:
+"customer_id"	"transactions_within_60min"	"first_in_window"	"last_in_window"	"burst_duration_minutes"
+"CUST00022"	6	"2026-02-25 16:07:00"	"2026-02-25 16:34:00"	27.0000000000000000
+"CUST00105"	6	"2026-04-20 12:16:00"	"2026-04-20 12:43:00"	27.0000000000000000
+"CUST00207"	6	"2026-05-20 08:28:00"	"2026-05-20 08:55:00"	27.0000000000000000
+"CUST00289"	6	"2026-02-26 18:38:00"	"2026-02-26 19:05:00"	27.0000000000000000
+"CUST00328"	6	"2026-01-28 15:27:00"	"2026-01-28 15:54:00"	27.0000000000000000
+"CUST00365"	6	"2026-04-17 13:23:00"	"2026-04-17 13:50:00"	27.0000000000000000
+"CUST00383"	6	"2026-04-21 15:11:00"	"2026-04-21 15:38:00"	27.0000000000000000
+"CUST00435"	6	"2026-06-10 14:06:00"	"2026-06-10 14:33:00"	27.0000000000000000
+"CUST00440"	6	"2026-04-12 12:50:00"	"2026-04-12 13:17:00"	27.0000000000000000
+"CUST00521"	6	"2026-04-01 08:50:00"	"2026-04-01 09:17:00"	27.0000000000000000
+"CUST00568"	6	"2026-04-02 15:19:00"	"2026-04-02 15:46:00"	27.0000000000000000
+"CUST00571"	6	"2026-05-18 12:01:00"	"2026-05-18 12:28:00"	27.0000000000000000
+"CUST00592"	6	"2026-05-09 10:57:00"	"2026-05-09 11:24:00"	27.0000000000000000
+"CUST00672"	6	"2026-01-03 08:01:00"	"2026-01-03 08:28:00"	27.0000000000000000
+"CUST00682"	6	"2026-03-10 12:31:00"	"2026-03-10 12:58:00"	27.0000000000000000
+"CUST00717"	6	"2026-05-26 15:18:00"	"2026-05-26 15:45:00"	27.0000000000000000
+"CUST00753"	6	"2026-01-23 08:39:00"	"2026-01-23 09:06:00"	27.0000000000000000
+"CUST00829"	6	"2026-03-11 13:05:00"	"2026-03-11 13:32:00"	27.0000000000000000
+"CUST00906"	6	"2026-01-29 15:22:00"	"2026-01-29 15:49:00"	27.0000000000000000
+"CUST00946"	6	"2026-01-09 09:41:00"	"2026-01-09 10:08:00"	27.0000000000000000
+
+35. fraud by transaction-amount band
+
+SELECT
+    CASE
+        WHEN Amount < 100 THEN 'Under 100'
+        WHEN Amount < 500 THEN '100-499'
+        WHEN Amount < 1000 THEN '500-999'
+        ELSE '1000+'
+    END AS amount_band,
+
+    COUNT(*) AS transactions,
+
+    SUM(
+        CASE
+            WHEN Ground_Truth_Label THEN 1
+            ELSE 0
+        END
+    ) AS fraud_transactions,
+
+    ROUND(
+        100.0 * SUM(
+            CASE
+                WHEN Ground_Truth_Label THEN 1
+                ELSE 0
+            END
+        ) / COUNT(*),
+        2
+    ) AS fraud_rate_pct
+
+FROM fact_transaction
+
+GROUP BY amount_band
+
+ORDER BY amount_band;
+
+Output:
+"amount_band"	"transactions"	"fraud_transactions"	"fraud_rate_pct"
+"100-499"	11577	55	0.48
+"1000+"	1437	235	16.35
+"500-999"	1851	9	0.49
+"Under 100"	35135	201	0.57
+
+36. customer-level spending behavior
+
+SELECT
+    Customer_ID,
+    COUNT(*) AS transactions,
+    ROUND(AVG(Amount), 2) AS avg_amount,
+    ROUND(MAX(Amount), 2) AS max_amount
+FROM fact_transaction
+GROUP BY Customer_ID
+ORDER BY max_amount DESC
+LIMIT 20;
+
+Output:
+"customer_id"	"transactions"	"avg_amount"	"max_amount"
+"CUST00490"	137	905.76	97956.76
+"CUST00805"	30	3430.35	97068.04
+"CUST00274"	43	2409.77	96502.43
+"CUST00310"	118	977.56	96065.13
+"CUST00180"	118	940.11	95670.88
+"CUST00210"	125	891.32	92980.37
+"CUST00987"	33	2893.48	92367.32
+"CUST00924"	47	2075.06	89942.22
+"CUST00089"	41	2305.47	89645.58
+"CUST00590"	113	883.65	89122.12
+"CUST00076"	41	2411.56	88845.37
+"CUST00053"	38	2441.83	88595.74
+"CUST00742"	44	2183.88	87553.90
+"CUST00687"	37	2397.93	86036.76
+"CUST00503"	42	4146.10	85737.23
+"CUST00419"	55	1756.51	85260.48
+"CUST00770"	142	1343.95	84898.11
+"CUST00425"	51	1846.81	83147.18
+"CUST00539"	42	2261.41	83074.92
+"CUST00706"	47	1953.92	82668.26
+
+37. customer-level channel diversity
+
+SELECT
+    channel_count,
+    COUNT(*) AS customers,
+    SUM(total_transactions) AS transactions,
+    SUM(fraud_transactions) AS fraud_transactions,
+    ROUND(
+        100.0 * SUM(fraud_transactions)
+        / SUM(total_transactions),
+        2
+    ) AS fraud_rate_pct
+FROM (
+    SELECT
+        t.Customer_ID,
+        COUNT(DISTINCT t.Channel_ID) AS channel_count,
+        COUNT(*) AS total_transactions,
+        SUM(
+            CASE
+                WHEN t.Ground_Truth_Label THEN 1
+                ELSE 0
+            END
+        ) AS fraud_transactions
+    FROM fact_transaction t
+    GROUP BY t.Customer_ID
+) customer_channels
+GROUP BY channel_count
+ORDER BY channel_count;
+
+Output:
+3	1000	50000	500	1.00
+
+38. Alert → Investigation → Resolution
+
+SELECT
+    COUNT(DISTINCT a.Alert_ID) AS total_alerts,
+
+    COUNT(DISTINCT a.Investigation_ID)
+        FILTER (WHERE a.Investigation_ID IS NOT NULL)
+        AS investigated_alerts,
+
+    COUNT(DISTINCT i.Investigation_ID)
+        AS total_investigations,
+
+    COUNT(DISTINCT i.Investigation_ID)
+        FILTER (WHERE i.Resolution_Code = 'Confirmed Fraud')
+        AS confirmed_fraud_cases,
+
+    COUNT(DISTINCT i.Investigation_ID)
+        FILTER (WHERE i.Resolution_Code = 'False Positive')
+        AS false_positive_cases,
+
+    ROUND(
+        100.0 *
+        COUNT(DISTINCT a.Investigation_ID)
+        FILTER (WHERE a.Investigation_ID IS NOT NULL)
+        / COUNT(DISTINCT a.Alert_ID),
+        2
+    ) AS alert_to_investigation_pct,
+
+    ROUND(
+        100.0 *
+        COUNT(DISTINCT i.Investigation_ID)
+        FILTER (WHERE i.Resolution_Code = 'Confirmed Fraud')
+        / NULLIF(COUNT(DISTINCT i.Investigation_ID), 0),
+        2
+    ) AS investigation_confirmation_pct
+
+FROM fact_alerts a
+LEFT JOIN fact_investigation i
+    ON a.Investigation_ID = i.Investigation_ID;
+
+Output:
+"total_alerts"	"investigated_alerts"	"total_investigations"	"confirmed_fraud_cases"	"false_positive_cases"	"alert_to_investigation_pct"	"investigation_confirmation_pct"
+7820	2925	2925	450	2475	37.40	15.38

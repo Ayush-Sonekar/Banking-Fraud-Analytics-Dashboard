@@ -1,0 +1,14 @@
+# Local agent & IDE configs
+.claude/
+.vscode/
+
+# OS & Windows artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+nul
+
+# Temporary files
+*.tmp
+*.bak
+*.log
