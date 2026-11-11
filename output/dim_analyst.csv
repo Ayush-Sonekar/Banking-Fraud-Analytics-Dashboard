@@ -1,0 +1,11 @@
+Analyst_ID,Name,Team,Shift
+AN000,Analyst_00,Fraud Operations,Morning
+AN001,Analyst_01,Fraud Operations,Evening
+AN002,Analyst_02,Fraud Operations,Night
+AN003,Analyst_03,Fraud Operations,Morning
+AN004,Analyst_04,Fraud Operations,Evening
+AN005,Analyst_05,Fraud Operations,Night
+AN006,Analyst_06,Fraud Operations,Morning
+AN007,Analyst_07,Senior Investigations,Evening
+AN008,Analyst_08,Senior Investigations,Night
+AN009,Analyst_09,Senior Investigations,Morning

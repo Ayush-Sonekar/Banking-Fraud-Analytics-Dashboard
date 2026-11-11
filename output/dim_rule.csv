@@ -1,0 +1,11 @@
+Rule_ID,Rule_Name,Logic_Type
+R01,Velocity-High,Velocity
+R02,Geo-Mismatch,Geographic
+R03,Large-Tx,Amount
+R04,High-Risk-Merchant,Merchant
+R05,New-Device,Account-Takeover
+R06,Night-Time-Activity,Temporal
+R07,Rapid-Amount-Escalation,Behavioral
+R08,Cross-Region-Activity,Geographic
+R09,Multiple-Risk-Signals,Composite
+R10,Model-Score-Threshold,Model
